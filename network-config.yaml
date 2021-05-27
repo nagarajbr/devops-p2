@@ -1,0 +1,307 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Udacity DevOps Project 2 - High Availability Web App Using CloudFormation; includes VPCs, 
+Subnets, CIDR, Securitygroups, NATs and related network components
+
+Parameters:
+  Environment:
+    Description: Environment name
+    Type: String
+
+  ProjectName:
+    Description: Project name
+    Type: String
+
+  VpcCIDR:
+    Description: VPC CIDR range
+    Type: String
+
+  SubnetCIDRBlocks:
+    Description: list of CIDR block for public and private subnets that will be associated in Availability Zone 1 and 2
+    Type: CommaDelimitedList
+
+Resources:
+
+  # Describe our VPC to serve as the cloud and primary CIDR block for our HA website project
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCIDR
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # Describe the Iternet Gateway for connecting VPC, and public subnets to the internet.
+	# Use the gateway as the taregt for the route table
+  UdaDevOpsP2InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+  UdaDevOpsP2InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref UdaDevOpsP2InternetGateway
+      VpcId: !Ref VPC
+
+
+  # Create public subnets in availability zones 1 and 2.
+  UdaDevOpsP2PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      CidrBlock: !Select [ 0, !Ref SubnetCIDRBlocks ]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: Public Subnet in AZ1 
+        - Key: Project
+          Value: !Ref ProjectName
+
+	UdaDevOpsP2PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+        VpcId: !Ref VPC
+        AvailabilityZone: !Select [ 1, !GetAZs '' ]
+        CidrBlock: !Select [ 2, !Ref SubnetCIDRBlocks ]
+        MapPublicIpOnLaunch: true
+        Tags:
+          - Key: Name
+            Value: Public Subnet in AZ2
+          - Key: Project
+            Value: !Ref ProjectName
+
+  # Create Private subnets in availability zones 1 and 2, and corresponding to the public subnets above
+  UdaDevOpsP2PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+        VpcId: !Ref VPC
+        AvailabilityZone: !Select [ 0, !GetAZs '' ]
+        CidrBlock: !Select [ 1, !Ref SubnetCIDRBlocks ]
+        MapPublicIpOnLaunch: false
+        Tags:
+          - Key: Name
+            Value: Private Subnet in AZ1
+          - Key: Project
+            Value: !Ref ProjectName
+
+	UdaDevOpsP2PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+        VpcId: !Ref VPC
+        AvailabilityZone: !Select [ 1, !GetAZs '' ]
+        CidrBlock: !Select [ 3, !Ref SubnetCIDRBlocks ]
+        MapPublicIpOnLaunch: false
+        Tags:
+          - Key: Name
+            Value: Private Subnet in AZ2
+          - Key: Project
+            Value: !Ref ProjectName
+
+
+  # Describe NAT gateways and corresponding elastic IPs for each private subnet (1 and 2)
+	# to connect to the internet and place them in corresponding public subnets
+  UdaDevOpsP2NatGateway1EIP:
+    Type: AWS::EC2::EIP
+    DependsOn: UdaDevOpsP2InternetGatewayAttachment
+    Properties:
+        Domain: vpc
+
+  UdaDevOpsP2NatGateway1:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGateway1EIP.AllocationId
+      SubnetId: !Ref UdaDevOpsP2PublicSubnet1
+      Tags:
+        - Key: Name
+          Value: NAT Gateway 1
+        - Key: Project
+          Value: !Ref ProjectName
+
+  UdaDevOpsP2NatGateway2EIP:
+    Type: AWS::EC2::EIP
+    DependsOn: UdaDevOpsP2InternetGatewayAttachment
+    Properties:
+        Domain: vpc
+
+  UdaDevOpsP2NatGateway2:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGateway1EIP.AllocationId
+      SubnetId: !Ref UdaDevOpsP2PublicSubnet2
+      Tags:
+        - Key: Name
+          Value: NAT Gateway 2
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # Create Public Route Table describing network traffic directions between subnets and / or gateways
+	# for the VPC that we have created
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: Public Route Table
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # Describe a route in a route table within a VPC.
+  DefaultPublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref UdaDevOpsP2PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref UdaDevOpsP2InternetGateway
+
+	# Associate public subnets 1 and 2 with the public routes created here
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref UdaDevOpsP2PublicSubnet1
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+        RouteTableId: !Ref PublicRouteTable
+        SubnetId: !Ref UdaDevOpsP2PublicSubnet2
+
+  # Create Private Routes Table to manage traffic within and associate with private subnets 1 and 2
+  PrivateRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: Private Route Table 1
+        - Key: Project
+          Value: !Ref ProjectName
+
+  PrivateRouteTable2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: Private Route Table 2
+        - Key: Project
+          Value: !Ref ProjectName
+
+	# Associate private subnets 1 and 2 with the private route tables created here
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      SubnetId: !Ref PrivateSubnet1
+
+  # Private subnet 2 to the private route table 2
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      SubnetId: !Ref PrivateSubnet2
+
+  # Specify routes for NAT Gateway 1 and 2
+  DefaultPrivateRoute1:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway1
+	
+  DefaultPrivateRoute2:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway2
+
+# Security group for more granular control of instances and ELB interaction
+  LoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Load Balancer HTTP traffic
+      GroupName: Load-balancer-security-group
+      VpcId: !Ref VPC
+      # Outbound traffic
+      SecurityGroupIngress:
+      - IpProtocol: TCP
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0
+      # Inbound traffic
+      SecurityGroupEgress:
+      - IpProtocol: TCP
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # Application security group for the EC2 instances in the private subnets (part of the target group)
+  ApplicationSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Application Security Group
+      GroupName: Application-security-group
+      VpcId: !Ref VPC
+      # Inbound traffic restricted to traffic from load balancer
+      SecurityGroupIngress:
+      - Description: Inbound rule to allow the Load Balancer.
+        IpProtocol: TCP
+        SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
+        FromPort: 80
+        ToPort: 80
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+# Capture Outputs from this stack
+Outputs:
+  VPC:
+    Description: VPC reference
+    Value: !Ref VPC
+    Export:
+      Name: !Sub ${ProjectName}-VPCID
+
+  PublicSubnets:
+    Description: Public subnet IDs
+    Value: !Join [ ",", [ !Ref UdaDevOpsP2PublicSubnet1, !Ref UdaDevOpsP2PublicSubnet2 ]]
+    Export:
+      Name: !Sub ${ProjectName}-UdaDevOpsP2-Public-Subnet-IDs
+
+  PublicSubnet1CIDR:
+    Description: Public Subnet 1 CIDR
+    Value: !Ref UdaDevOpsP2PublicSubnet1CIDR
+    Export:
+      Name: !Sub ${ProjectName}-UdaDevOpsP2-Public-Subnet-1-CIDR
+
+  PublicSubnet2CIDR:
+    Description: Public Subnet 2 CIDR
+    Value: !Ref UdaDevOpsP2PublicSubnet2CIDR
+    Export:
+      Name: !Sub ${ProjectName}-UdaDevOpsP2-Public-Subnet-2-CIDR
+
+  PrivateSubnets:
+    Description: Private subnet IDs
+    Value: !Join [ ",", [ !Ref UdaDevOpsP2PrivateSubnet1, !Ref UdaDevOpsP2PrivateSubnet2 ]]
+    Export:
+      Name: !Sub ${ProjectName}-UdaDevOpsP2-Private-Subnet-IDs
+
+  ApplicationSecurityGroup:
+    Description: Applicaion security group
+    Value: !Ref ApplicationSecurityGroup
+    Export:
+      Name: !Sub ${Project}-WebAppSecurityGroupID
+
+  LoadBalancerSecurityGroup:
+    Description: Load balancer security group
+    Value: !Ref LoadBalancerSecurityGroup
+    Export:
+      Name: !Sub ${Project}-ELBSecurityGroupID

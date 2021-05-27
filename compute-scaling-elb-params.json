@@ -1,0 +1,23 @@
+[
+	{
+		"ParameterKey": "Environment",
+		"ParameterValue": "Udacity-DevOps-Project2-Dev"
+	},
+	{
+		"ParameterKey": "ProjectName",
+		"ParameterValue": "Udacity-DevOps-Project2-HA-WebSite"
+	},
+	{
+		"ParameterKey": "UdaDevOpsP2WebServerInstanceType",
+		"ParameterValue": "t2.medium"
+	},
+	{
+		"ParameterKey": "UdaDevOpsP2WebServerImageId",
+		"ParameterValue": "ami-0747bdcabd34c712a"
+	},
+	{
+		"ParameterKey": "UdaDevOpsP2CPUUsageTargetForSclaing",
+		"ParameterValue": "90.0"
+	}
+]
+  
