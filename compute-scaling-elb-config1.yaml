@@ -3,33 +3,31 @@ Description: Udacity DevOps Project 2 - High Availability Web App Using CloudFor
 
 Parameters:
   Environment:
-    Description: EnvName
+    Description: Env-Name
     Type: String
     Default: Udacity-DevOps-Project2-Dev
 
   ProjectName:
-    Description: Project name
+    Description: Proj-Name
     Type: String
     Default: Udacity-DevOps-Project2-HA-WebSite
 
   UdaDevOpsP2WebServerImageId:
-    Description: Web Application Server Image Id should be Ubuntu OS v18 
+    Description: Web Application Server Image Id should be Ubuntu OS v18
     Type: String
-    Default: t2.medium
-
+    Default: ami-0747bdcabd34c712a
+  
   UdaDevOpsP2WebServerInstanceType:
     Description: Web Application Server Image Id with 2 vCPUs and at least 4GB of RAM
     Type: String
-    Default: ami-0747bdcabd34c712a
+    Default: t2.medium
 
-  UdaDevOpsP2CPUUsageTargetForSclaing:
+  UdaDevOpsP2CPUUsageTargetForScaling:
     Description: Target Percentage for CPU Utilization to trigger new launch instance in Auto Scaling
     Type: String
-    Default: 90.0
+    Default: "90.0"
 
 Resources:
-  # EC2-S3 service policy for appropriate access and role; will be referenced in EC2 Instance profile
-  
   UdaDevOpsP2s3ReadOnlyEC2:
     Type: AWS::IAM::Role
     Properties:
@@ -60,6 +58,18 @@ Resources:
   UdaDevOpsP2WebAppServerLaunchConfig:
     Type: AWS::AutoScaling::LaunchConfiguration
     Properties:
+      ImageId: !Ref UdaDevOpsP2WebServerImageId
+      IamInstanceProfile: !Ref UdaDevOpsP2WebAppInstanceProfile
+      SecurityGroups:
+      - Fn::ImportValue:
+          !Sub "${ProjectName}-WebAppSecurityGroupID"
+      InstanceType: !Ref UdaDevOpsP2WebServerInstanceType
+      BlockDeviceMappings:
+      - DeviceName: "/dev/sdk"
+        Ebs:
+          VolumeSize: '10'
+          DeleteOnTermination: true
+          VolumeType: "gp2"
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash
@@ -70,17 +80,6 @@ Resources:
           cd /var/www/html
           aws s3 cp s3://uda-devops-p2/udacity.zip .
           unzip -o udacity.zip
-      ImageId: !Ref UdaDevOpsP2WebServerImageId
-      IamInstanceProfile: !Ref UdaDevOpsP2WebAppInstanceProfile
-      SecurityGroups:
-      - Fn::ImportValue:
-          !Sub "${Project}-AppSecurityGroupID"
-      InstanceType: !Ref UdaDevOpsP2WebServerInstanceType
-      BlockDeviceMappings:
-      - DeviceName: "/dev/sdk"
-        Ebs:
-          VolumeSize: '10'
-          DeleteOnTermination: true
 
   # Describe Application Load Balancer for checking the health of the EC2 instances
   # in the target group; ping the root using HTTP; and related configuration points
@@ -96,9 +95,9 @@ Resources:
       Port: 80
       Protocol: HTTP
       UnhealthyThresholdCount: 5
-    VpcId:
-      Fn::ImportValue:
-        Fn::Sub: "${ProjectName}-VPCID"
+      VpcId:
+        Fn::ImportValue:
+          Fn::Sub: "${ProjectName}-VPCID"
 
   # Described EC2 instances and subnet location of the web app servers. In this project, 
   # the webapp servers are to be placed in private subnets
@@ -128,10 +127,10 @@ Resources:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
       Subnets:
-      - Fn::ImportValue: !Sub ${ProjectName}-Public-Subnet-1-ID
-      - Fn::ImportValue: !Sub ${ProjectName}-Public-Subnet-2-ID
+      - Fn::ImportValue: !Sub ${ProjectName}-Public-Subnet-1
+      - Fn::ImportValue: !Sub ${ProjectName}-Public-Subnet-2
       SecurityGroups:
-      - Fn::ImportValue: !Sub ${ProjectName}-LBSecurityGroupID
+      - Fn::ImportValue: !Sub ${ProjectName}-ELBSecurityGroupID
       Tags:
         - Key: Name
           Value: UdaDevOpsP2-ELB
@@ -165,37 +164,64 @@ Resources:
   # Describe the policy type for scaling (we have configured the parameter for the CPU utilization threshold)
   # the autoscaling policy will apply this policy on the target launch config group, as well as incorporate
   # the ELB initiated health checks
-  UDADevOpsP2WebAppServerCPUPolicy:
+  UdaDevOpsP2AppScaleUpPolicy:
     Type: AWS::AutoScaling::ScalingPolicy
     Properties:
-      AutoScalingGroupName: !Ref UdaDevOpsP2WebAppTargetGroup
-      PolicyType: TargetTrackingScaling
-      TargetTrackingConfiguration:
-        PredefinedMetricSpecification:
-          PredefinedMetricType: ASGAverageCPUUtilization
-        TargetValue: !Ref CPUUsagePercentPolicyTargetValue
-
-  UDADevOpsP2WebAppServerCountPolicy:
+      AutoScalingGroupName: !Ref UdaDevOpsP2WebAppServerGroup
+      AdjustmentType: ChangeInCapacity
+      Cooldown: 60
+      ScalingAdjustment: 1
+  
+  UdaDevOpsP2AppScaleDownPolicy:
     Type: AWS::AutoScaling::ScalingPolicy
     Properties:
-      AutoScalingGroupName: !Ref UdaDevOpsP2WebAppTargetGroup
-      PolicyType: TargetTrackingScaling
-      TargetTrackingConfiguration:
-        PredefinedMetricSpecification:
-          PredefinedMetricType: ALBRequestCountPerTarget
-          ResourceLabel: !Join
-            - '/'
-            - - !GetAtt WebAppLoadBalancer.LoadBalancerFullName
-              - !GetAtt WebAppTargetGroup.TargetGroupFullName
-        TargetValue: !Ref ALBRequestCompleteCountTargetValue
+      AutoScalingGroupName: !Ref UdaDevOpsP2WebAppServerGroup
+      AdjustmentType: ChangeInCapacity
+      Cooldown: 300
+      ScalingAdjustment: -1
+  
+  CPUUsageAlarmHigh:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      ComparisonOperator: GreaterThanThreshold
+      EvaluationPeriods: 2
+      MetricName: CPUUtilization
+      Period: 300
+      Statistic: Average
+      Namespace: AWS/EC2
+      Threshold: 90
+      AlarmName: 'CPUHIGHALARM'
+      AlarmActions:
+      - !Ref UdaDevOpsP2AppScaleUpPolicy
+      Dimensions:
+        - Name: AutoScalingGroup
+          Value: !Ref UdaDevOpsP2WebAppServerGroup
+  
+  CPUUsageAlarmLow:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      ComparisonOperator: GreaterThanThreshold
+      EvaluationPeriods: 2
+      MetricName: CPUUtilization
+      Period: 300
+      Statistic: Average
+      Namespace: AWS/EC2
+      Threshold: 50
+      AlarmName: 'CPUHIGHALARM'
+      AlarmActions:
+      - !Ref UdaDevOpsP2AppScaleDownPolicy
+      Dimensions:
+        - Name: AutoScalingGroup
+          Value: !Ref UdaDevOpsP2WebAppServerGroup
 
-# Capture Outputs from this stack
+
+  # Capture Outputs from this stack
 Outputs:
   DNS:
     Description: ELB becomes the internet facing endpoint/URL
     Value:
       !Sub
         - 'http://${DNSName}'
-        - {DNSName: !GetAtt 'WebAppLoadBalancer.DNSName'}
+        - {DNSName: !GetAtt 'UdaDevOpsP2ElasticLoadBalancer.DNSName'}
     Export:
       Name: !Sub "${ProjectName}-URL"

@@ -16,7 +16,7 @@
 		"ParameterValue": "ami-0747bdcabd34c712a"
 	},
 	{
-		"ParameterKey": "UdaDevOpsP2CPUUsageTargetForSclaing",
+		"ParameterKey": "UdaDevOpsP2CPUUsageTargetForScaling",
 		"ParameterValue": "90.0"
 	}
 ]

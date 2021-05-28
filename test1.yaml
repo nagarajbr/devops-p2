@@ -1,0 +1,2 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Udacity DevOps Project 2 - High Availability Web App Using CloudFormation
