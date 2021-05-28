@@ -25,7 +25,7 @@ Parameters:
   UdaDevOpsP2CPUUsageTargetForScaling:
     Description: Target Percentage for CPU Utilization to trigger new launch instance in Auto Scaling
     Type: String
-    Default: 90.0
+    Default: "90.0"
 
 Resources:
   UdaDevOpsP2s3ReadOnlyEC2:
@@ -58,16 +58,6 @@ Resources:
   UdaDevOpsP2WebAppServerLaunchConfig:
     Type: AWS::AutoScaling::LaunchConfiguration
     Properties:
-      UserData:
-        Fn::Base64: !Sub |
-          #!/bin/bash
-          apt-get update -y
-          apt-get install unzip awscli -y
-          apt-get install apache2 -y
-          systemctl start apache2.service
-          cd /var/www/html
-          aws s3 cp s3://uda-devops-p2/udacity.zip .
-          unzip -o udacity.zip
       ImageId: !Ref UdaDevOpsP2WebServerImageId
       IamInstanceProfile: !Ref UdaDevOpsP2WebAppInstanceProfile
       SecurityGroups:
@@ -79,6 +69,17 @@ Resources:
         Ebs:
           VolumeSize: '10'
           DeleteOnTermination: true
+          VolumeType: "gp2"
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          apt-get update -y
+          apt-get install unzip awscli -y
+          apt-get install apache2 -y
+          systemctl start apache2.service
+          cd /var/www/html
+          aws s3 cp s3://uda-devops-p2/udacity.zip .
+          unzip -o udacity.zip
 
   # Describe Application Load Balancer for checking the health of the EC2 instances
   # in the target group; ping the root using HTTP; and related configuration points
@@ -163,29 +164,56 @@ Resources:
   # Describe the policy type for scaling (we have configured the parameter for the CPU utilization threshold)
   # the autoscaling policy will apply this policy on the target launch config group, as well as incorporate
   # the ELB initiated health checks
-  UDADevOpsP2WebAppServerCPUPolicy:
+  UdaDevOpsP2AppScaleUpPolicy:
     Type: AWS::AutoScaling::ScalingPolicy
     Properties:
-      AutoScalingGroupName: !Ref UdaDevOpsP2WebAppTargetGroup
-      PolicyType: TargetTrackingScaling
-      TargetTrackingConfiguration:
-        PredefinedMetricSpecification:
-          PredefinedMetricType: ASGAverageCPUUtilization
-        TargetValue: !Ref UdaDevOpsP2CPUUsageTargetForScaling
+      AutoScalingGroupName: !Ref UdaDevOpsP2WebAppServerGroup
+      AdjustmentType: ChangeInCapacity
+      Cooldown: 60
+      ScalingAdjustment: 1
+  
+  UdaDevOpsP2AppScaleDownPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref UdaDevOpsP2WebAppServerGroup
+      AdjustmentType: ChangeInCapacity
+      Cooldown: 300
+      ScalingAdjustment: -1
+  
+  CPUUsageAlarmHigh:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      ComparisonOperator: GreaterThanThreshold
+      EvaluationPeriods: 2
+      MetricName: CPUUtilization
+      Period: 300
+      Statistic: Average
+      Namespace: AWS/EC2
+      Threshold: 90
+      AlarmName: 'CPUHIGHALARM'
+      AlarmActions:
+      - !Ref UdaDevOpsP2AppScaleUpPolicy
+      Dimensions:
+        - Name: AutoScalingGroup
+          Value: !Ref UdaDevOpsP2WebAppServerGroup
+  
+  CPUUsageAlarmLow:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      ComparisonOperator: GreaterThanThreshold
+      EvaluationPeriods: 2
+      MetricName: CPUUtilization
+      Period: 300
+      Statistic: Average
+      Namespace: AWS/EC2
+      Threshold: 50
+      AlarmName: 'CPUHIGHALARM'
+      AlarmActions:
+      - !Ref UdaDevOpsP2AppScaleDownPolicy
+      Dimensions:
+        - Name: AutoScalingGroup
+          Value: !Ref UdaDevOpsP2WebAppServerGroup
 
-  UDADevOpsP2WebAppServerCountPolicy:
-    Type: AWS::AutoScaling::ScalingPolicy
-    Properties:
-      AutoScalingGroupName: !Ref UdaDevOpsP2WebAppTargetGroup
-      PolicyType: TargetTrackingScaling
-      TargetTrackingConfiguration:
-        PredefinedMetricSpecification:
-          PredefinedMetricType: ALBRequestCountPerTarget
-          ResourceLabel: !Join
-            - '/'
-            - - !GetAtt UdaDevOpsP2ElasticLoadBalancer.LoadBalancerFullName
-              - !GetAtt UdaDevOpsP2WebAppTargetGroup.TargetGroupFullName
-        TargetValue: !Ref UdaDevOpsP2CPUUsageTargetForScaling
 
   # Capture Outputs from this stack
 Outputs:
