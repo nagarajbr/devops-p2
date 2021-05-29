@@ -6,7 +6,7 @@ case $ACTION in
   create)
     aws cloudformation create-stack \
     --stack-name $STACK_NAME \
-    --template-body file://compute-scaling-elb-config.yaml \
+    --template-body file://compute-scaling-elb-stack-config.yaml \
     --parameters file://compute-scaling-elb-params.json \
     --capabilities "CAPABILITY_IAM" "CAPABILITY_NAMED_IAM" \
     --region=us-east-1
@@ -15,7 +15,7 @@ case $ACTION in
   update)
     aws cloudformation update-stack \
     --stack-name $STACK_NAME \
-    --template-body file://compute-scaling-elb-config.yaml \
+    --template-body file://compute-scaling-elb-stack-config.yaml \
     --parameters file://compute-scaling-elb-params.json
     ;;
 

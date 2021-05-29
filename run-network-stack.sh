@@ -1,4 +1,4 @@
-STACK_NAME="UdaDevOpsP2-HA-compute-services"
+STACK_NAME="UdaDevOpsP2-HA-network-services"
 ACTION=$1
 
 case $ACTION in
@@ -6,7 +6,7 @@ case $ACTION in
   create)
     aws cloudformation create-stack \
     --stack-name $STACK_NAME \
-    --template-body file://network-config.yaml \
+    --template-body file://network-stack-config.yaml \
     --parameters file://network-params.json \
     --capabilities "CAPABILITY_IAM" "CAPABILITY_NAMED_IAM" \
     --region=us-east-1
@@ -15,7 +15,7 @@ case $ACTION in
   update)
     aws cloudformation update-stack \
     --stack-name $STACK_NAME \
-    --template-body file://network-config.yaml \
+    --template-body file://network-stack-config.yaml \
     --parameters file://network-params.json
     ;;
 
